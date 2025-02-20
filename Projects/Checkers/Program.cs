@@ -1,36 +1,50 @@
-﻿using System;
+﻿/*
+Requirement A: Pieces can move in all 8 directions
+Requirement B: Make it so that all pieces have movement styles
+*/
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-// Piece color enumeration
-enum PieceColor { Black, White }
-
-// Piece class
-class Piece
+public enum PieceColor
 {
-    public int X { get; set; } // Piece's X coordinate
-    public int Y { get; set; } // Piece's Y coordinate
-    public PieceColor Color { get; set; } // Piece color
-    public bool Promoted { get; set; } // Whether the piece is promoted to a king
+    Black,
+    White
+}
 
-    public Piece(int x, int y, PieceColor color, bool promoted = false)
+public enum MovementStyle
+{
+    Normal,
+    Knight,
+    Bishop,
+    Queen
+}
+
+public class Piece
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public PieceColor Color { get; }
+    public bool Promoted { get; set; }
+    public MovementStyle Style { get; set; }
+
+    public Piece(int x, int y, PieceColor color, MovementStyle style = MovementStyle.Normal)
     {
         X = x;
         Y = y;
         Color = color;
-        Promoted = promoted;
+        Style = style;
     }
 }
 
-// Move class
-class Move
+public class Move
 {
-    public Piece PieceToMove { get; set; } // The piece to move
-    public Piece? PieceToCapture { get; set; } // The piece to capture (nullable)
-    public (int X, int Y) To { get; set; } // The target position of the move
+    public Piece PieceToMove { get; }
+    public (int X, int Y) To { get; }
+    public Piece? PieceToCapture { get; }
 
-    // Constructor
     public Move(Piece pieceToMove, (int X, int Y) to, Piece? pieceToCapture = null)
     {
         PieceToMove = pieceToMove;
@@ -39,141 +53,262 @@ class Move
     }
 }
 
-// Board class
-class Board
+public class Board
 {
-    public Piece?[,] Grid { get; set; } = new Piece?[8, 8]; // 8x8 grid for the board
-    public Piece? Aggressor { get; set; } // Current aggressor (nullable)
+    private readonly Piece?[,] squares = new Piece?[8, 8];
+    public Piece? Aggressor { get; private set; }
 
-    // Indexer to access pieces on the board
+    private static readonly (int X, int Y)[] AllDirections = new[]
+    {
+        (1, 1), (1, -1), (-1, 1), (-1, -1),  // Diagonal directions
+        (1, 0), (-1, 0), (0, 1), (0, -1)     // Straight directions
+    };
+
+    private static readonly (int X, int Y)[] KnightMoves = new[]
+    {
+        (2, 1), (2, -1), (-2, 1), (-2, -1),
+        (1, 2), (1, -2), (-1, 2), (-1, -2)
+    };
+
+    public IEnumerable<Piece> Pieces =>
+        from x in Enumerable.Range(0, 8)
+        from y in Enumerable.Range(0, 8)
+        where squares[x, y] is not null
+        select squares[x, y]!;
+
     public Piece? this[int x, int y]
     {
-        get => Grid[x, y];
-        set => Grid[x, y] = value;
+        get => squares[x, y];
+        set
+        {
+            if (squares[x, y] is not null)
+            {
+                var piece = squares[x, y]!;
+                squares[piece.X, piece.Y] = null;
+            }
+            if (value is not null)
+            {
+                value.X = x;
+                value.Y = y;
+                squares[x, y] = value;
+            }
+        }
     }
 
-    // Get all possible moves for the current color
-    public List<Move> GetPossibleMoves(PieceColor color)
+    public Board()
     {
-        var moves = new List<Move>();
+        // Initialize the board with pieces
         for (int x = 0; x < 8; x++)
         {
-            for (int y = 0; y < 8; y++)
+            for (int y = 0; y < 3; y++)
             {
-                var piece = Grid[x, y];
-                if (piece != null && piece.Color == color)
+                if ((x + y) % 2 == 1)
                 {
-                    moves.AddRange(GetMovesForPiece(piece));
+                    squares[x, y] = new Piece(x, y, PieceColor.White);
+                }
+            }
+            for (int y = 5; y < 8; y++)
+            {
+                if ((x + y) % 2 == 1)
+                {
+                    squares[x, y] = new Piece(x, y, PieceColor.Black);
                 }
             }
         }
-        return moves;
     }
 
-    // Get all possible moves for a specific piece
+    public List<Move> GetPossibleMoves(PieceColor color)
+    {
+        var moves = new List<Move>();
+        foreach (var piece in Pieces.Where(p => p.Color == color))
+        {
+            moves.AddRange(GetMovesForPiece(piece));
+        }
+
+        var captures = moves.Where(move => move.PieceToCapture is not null).ToList();
+        return captures.Any() ? captures : moves;
+    }
+
+/*
+// The GetMovesForPiece method calculates all the moves of the piece based on the piece type and movement rules.
+// The method first determines the movement type (MovementStyle) of the piece, and then calls the corresponding function to calculate the legal movement path according to the different types of pieces.
+// Supported piece types include:
+// - Normal: Normal pieces, usually only allowed to move forward, and may be allowed to capture pieces diagonally.
+// - Knight: Knight, moves according to the 'L' shape rule.
+// - Bishop: Bishop, unlimited movement along the diagonal.
+// - Rook: Rook, unlimited movement along a straight line (horizontally or vertically).
+// - Queen: Queen, combining the movement rules of the rook and bishop, can move freely along both straight lines and diagonals.
+// - King: King, moves to an adjacent square around, and can only move one step at a time.
+*/
     private List<Move> GetMovesForPiece(Piece piece)
     {
         var moves = new List<Move>();
-        int[] dx = { -1, 1, -1, 1 }; // Horizontal movement directions
-        int[] dy = { -1, -1, 1, 1 }; // Vertical movement directions
 
-        for (int i = 0; i < 4; i++)
+        switch (piece.Style)
         {
-            int newX = piece.X + dx[i];
-            int newY = piece.Y + dy[i];
+            case MovementStyle.Normal:
+                AddNormalMoves(piece, moves);
+                break;
 
-            if (newX >= 0 && newX < 8 && newY >= 0 && newY < 8)
+            case MovementStyle.Knight:
+                foreach (var move in KnightMoves)
+                {
+                    var newX = piece.X + move.X;
+                    var newY = piece.Y + move.Y;
+                    if (IsValidPosition(newX, newY) && this[newX, newY]?.Color != piece.Color)
+                    {
+                        moves.Add(new Move(piece, (newX, newY), this[newX, newY]));
+                    }
+                }
+                break;
+
+            case MovementStyle.Bishop:
+                foreach (var dir in AllDirections.Take(4)) // Only diagonal directions
+                {
+                    AddMovesInDirection(piece, dir.X, dir.Y, moves);
+                }
+                break;
+
+            case MovementStyle.Queen:
+                foreach (var dir in AllDirections)
+                {
+                    AddMovesInDirection(piece, dir.X, dir.Y, moves);
+                }
+                break;
+        }
+
+        return moves;
+    }
+
+    private void AddNormalMoves(Piece piece, List<Move> moves)
+    {
+        int forward = piece.Color == PieceColor.Black ? -1 : 1;
+
+        // Add normal moves
+        foreach (int dx in new[] { -1, 1 })
+        {
+            int newX = piece.X + dx;
+            int newY = piece.Y + forward;
+
+            if (IsValidPosition(newX, newY))
             {
-                var targetPiece = Grid[newX, newY];
-                if (targetPiece == null)
+                if (this[newX, newY] is null)
                 {
                     moves.Add(new Move(piece, (newX, newY)));
                 }
-                else if (targetPiece.Color != piece.Color)
+                else if (this[newX, newY]?.Color != piece.Color)
                 {
-                    int jumpX = newX + dx[i];
-                    int jumpY = newY + dy[i];
-                    if (jumpX >= 0 && jumpX < 8 && jumpY >= 0 && jumpY < 8 && Grid[jumpX, jumpY] == null)
+                    int jumpX = newX + dx;
+                    int jumpY = newY + forward;
+                    if (IsValidPosition(jumpX, jumpY) && this[jumpX, jumpY] is null)
                     {
-                        moves.Add(new Move(piece, (jumpX, jumpY), targetPiece));
+                        moves.Add(new Move(piece, (jumpX, jumpY), this[newX, newY]));
                     }
                 }
             }
         }
-        return moves;
-    }
 
-    // Validate if a move is valid
-    public Move? ValidateMove(PieceColor color, (int X, int Y) from, (int X, int Y) to)
-    {
-        var piece = Grid[from.X, from.Y];
-        if (piece == null || piece.Color != color)
+        // Add backward moves for promoted pieces
+        if (piece.Promoted)
         {
-            return null;
-        }
-
-        var moves = GetMovesForPiece(piece);
-        return moves.FirstOrDefault(m => m.To == to);
-    }
-
-    // Perform a move
-    public void PerformMove(Move move)
-    {
-        Grid[move.PieceToMove.X, move.PieceToMove.Y] = null;
-        Grid[move.To.X, move.To.Y] = move.PieceToMove;
-        move.PieceToMove.X = move.To.X;
-        move.PieceToMove.Y = move.To.Y;
-
-        if (move.PieceToCapture != null)
-        {
-            Grid[move.PieceToCapture.X, move.PieceToCapture.Y] = null;
-        }
-    }
-
-    // Get all pieces on the board
-    public IEnumerable<Piece> Pieces => Grid.Cast<Piece?>().Where(p => p != null).Select(p => p!);
-
-    // Get the closest pair of pieces between the current color and the opponent's color
-    public (Piece, Piece) GetClosestRivalPieces(PieceColor color)
-    {
-        var pieces = Pieces.Where(p => p.Color == color).ToList();
-        var rivals = Pieces.Where(p => p.Color != color).ToList();
-        var minDistance = double.MaxValue;
-        Piece a = null!;
-        Piece b = null!;
-
-        foreach (var piece in pieces)
-        {
-            foreach (var rival in rivals)
+            foreach (int dx in new[] { -1, 1 })
             {
-                var distance = Math.Sqrt(Math.Pow(piece.X - rival.X, 2) + Math.Pow(piece.Y - rival.Y, 2));
-                if (distance < minDistance)
+                int newX = piece.X + dx;
+                int newY = piece.Y - forward;
+
+                if (IsValidPosition(newX, newY))
                 {
-                    minDistance = distance;
-                    a = piece;
-                    b = rival;
+                    if (this[newX, newY] is null)
+                    {
+                        moves.Add(new Move(piece, (newX, newY)));
+                    }
+                    else if (this[newX, newY]?.Color != piece.Color)
+                    {
+                        int jumpX = newX + dx;
+                        int jumpY = newY - forward;
+                        if (IsValidPosition(jumpX, jumpY) && this[jumpX, jumpY] is null)
+                        {
+                            moves.Add(new Move(piece, (jumpX, jumpY), this[newX, newY]));
+                        }
+                    }
                 }
             }
         }
-        return (a, b);
     }
 
-    // Check if a move is towards a target piece
-    public static bool IsTowards(Move move, Piece target)
+    private void AddMovesInDirection(Piece piece, int dx, int dy, List<Move> moves)
     {
-        int dx = move.To.X - move.PieceToMove.X;
-        int dy = move.To.Y - move.PieceToMove.Y;
-        int targetDx = target.X - move.PieceToMove.X;
-        int targetDy = target.Y - move.PieceToMove.Y;
-        return (dx * targetDx > 0) && (dy * targetDy > 0);
+        int x = piece.X + dx;
+        int y = piece.Y + dy;
+
+        while (IsValidPosition(x, y))
+        {
+            if (this[x, y] == null)
+            {
+                moves.Add(new Move(piece, (x, y)));
+            }
+            else if (this[x, y]?.Color != piece.Color)
+            {
+                moves.Add(new Move(piece, (x, y), this[x, y]));
+                break;
+            }
+            else
+            {
+                break;
+            }
+            x += dx;
+            y += dy;
+        }
+    }
+
+    private bool IsValidPosition(int x, int y)
+    {
+        return x >= 0 && x < 8 && y >= 0 && y < 8;
+    }
+
+    public void PerformMove(Move move)
+    {
+        var piece = this[move.PieceToMove.X, move.PieceToMove.Y];
+        if (move.PieceToCapture is not null)
+        {
+            this[move.PieceToCapture.X, move.PieceToCapture.Y] = null;
+        }
+        this[move.To.X, move.To.Y] = piece;
+
+        // Promote pieces that reach the opposite end
+        if (!piece!.Promoted &&
+            ((piece.Color == PieceColor.Black && move.To.Y == 0) ||
+             (piece.Color == PieceColor.White && move.To.Y == 7)))
+        {
+            piece.Promoted = true;
+        }
+    }
+
+    public (Piece, Piece) GetClosestRivalPieces(PieceColor color)
+    {
+        var myPieces = Pieces.Where(p => p.Color == color);
+        var theirPieces = Pieces.Where(p => p.Color != color);
+
+        var closest = (from my in myPieces
+                       from their in theirPieces
+                       let distance = Math.Abs(my.X - their.X) + Math.Abs(my.Y - their.Y)
+                       orderby distance
+                       select (my, their)).First();
+
+        return closest;
+    }
+
+    public static bool IsTowards((int X, int Y) move, Piece target)
+    {
+        return Math.Abs(move.X - target.X) + Math.Abs(move.Y - target.Y) <
+               Math.Abs(move.X - target.X) + Math.Abs(move.Y - target.Y);
     }
 }
 
-// Player class
-class Player
+public class Player
 {
-    public PieceColor Color { get; set; } // Player color
-    public bool IsHuman { get; set; } // Whether the player is human
+    public PieceColor Color { get; }
+    public bool IsHuman { get; }
 
     public Player(PieceColor color, bool isHuman)
     {
@@ -182,92 +317,47 @@ class Player
     }
 }
 
-// Game class
-class Game
+public class Game
 {
-    public Board Board { get; set; } = new Board(); // Board
-    public List<Player> Players { get; set; } = new List<Player>(); // List of players
-    public PieceColor Turn { get; set; } = PieceColor.Black; // Current turn color
-    public PieceColor? Winner { get; set; } // Winner (nullable)
-
+    public Board Board { get; }
+    public List<Player> Players { get; }
+    public PieceColor Turn { get; private set; } = PieceColor.Black;
+    public PieceColor? Winner =>
+        !Board.GetPossibleMoves(Turn).Any() ? Turn == PieceColor.Black ? PieceColor.White : PieceColor.Black :
+        !Board.Pieces.Any(piece => piece.Color == PieceColor.Black) ? PieceColor.White :
+        !Board.Pieces.Any(piece => piece.Color == PieceColor.White) ? PieceColor.Black :
+        null;
 
     public Game(int humanPlayerCount)
     {
-        Players.Add(new Player(PieceColor.Black, humanPlayerCount > 0));
-        Players.Add(new Player(PieceColor.White, humanPlayerCount > 1));
+        Board = new Board();
+        Players = new List<Player>
+        {
+            new Player(PieceColor.Black, humanPlayerCount > 0),
+            new Player(PieceColor.White, humanPlayerCount > 1)
+        };
 
-        // Initialize pieces on the board
-        for (int x = 0; x < 8; x++)
+        // Randomly assign movement styles to pieces
+        foreach (var piece in Board.Pieces)
         {
-            for (int y = 0; y < 3; y++)
-            {
-                if ((x + y) % 2 == 1)
-                {
-                    Board[x, y] = new Piece(x, y, PieceColor.Black);
-                }
-            }
-        }
-        for (int x = 0; x < 8; x++)
-        {
-            for (int y = 5; y < 8; y++)
-            {
-                if ((x + y) % 2 == 1)
-                {
-                    Board[x, y] = new Piece(x, y, PieceColor.White);
-                }
-            }
+            piece.Style = (MovementStyle)Random.Shared.Next(Enum.GetValues(typeof(MovementStyle)).Length);
         }
     }
 
-    // Perform a move
     public void PerformMove(Move move)
     {
         Board.PerformMove(move);
-        if (move.PieceToCapture != null)
-        {
-            var captures = Board.GetPossibleMoves(Turn).Where(m => m.PieceToCapture != null).ToList();
-            if (captures.Count > 0)
-            {
-                Board.Aggressor = move.PieceToMove;
-                return;
-            }
-        }
-        Board.Aggressor = null;
         Turn = Turn == PieceColor.Black ? PieceColor.White : PieceColor.Black;
-        CheckForWinner();
     }
 
-    // Check if there is a winner
-    private void CheckForWinner()
-    {
-        var blackPieces = Board.Pieces.Where(p => p.Color == PieceColor.Black).ToList();
-        var whitePieces = Board.Pieces.Where(p => p.Color == PieceColor.White).ToList();
-
-        if (blackPieces.Count == 0)
-        {
-            Winner = PieceColor.White;
-        }
-        else if (whitePieces.Count == 0)
-        {
-            Winner = PieceColor.Black;
-        }
-        else if (Board.GetPossibleMoves(Turn).Count == 0)
-        {
-            Winner = Turn == PieceColor.Black ? PieceColor.White : PieceColor.Black;
-        }
-    }
-
-    // Get the number of captured pieces for a specific color
-    public int TakenCount(PieceColor color)
-    {
-        return 12 - Board.Pieces.Count(p => p.Color == color);
-    }
+    public int TakenCount(PieceColor color) =>
+        12 - Board.Pieces.Count(piece => piece.Color == color);
 }
 
-// Main program
-class Program
+// Main Program
+public class Program
 {
-    static void Main(string[] args)
+    public static void Main()
     {
         Exception? exception = null;
         Encoding encoding = Console.OutputEncoding;
@@ -295,50 +385,81 @@ class Program
         }
     }
 
-    // Show the intro screen and get the option
-    static Game ShowIntroScreenAndGetOption()
+    static void RenderGameState(Game game, Player? playerMoved = null, (int X, int Y)? selection = null, (int X, int Y)? from = null, bool promptPressKey = false)
     {
-        Console.Clear();
-        Console.WriteLine();
-        Console.WriteLine("  Checkers");
-        Console.WriteLine();
-        Console.WriteLine("  Checkers is played on an 8x8 board between two sides commonly known as black");
-        Console.WriteLine("  and white. The objective is simple - capture all your opponent's pieces. An");
-        Console.WriteLine("  alternative way to win is to trap your opponent so that they have no valid");
-        Console.WriteLine("  moves left.");
-        Console.WriteLine();
-        Console.WriteLine("  Black starts first and players take it in turns to move their pieces forward");
-        Console.WriteLine("  across the board diagonally. Should a piece reach the other side of the board");
-        Console.WriteLine("  the piece becomes a king and can then move diagonally backwards as well as");
-        Console.WriteLine("  forwards.");
-        Console.WriteLine();
-        Console.WriteLine("  Pieces are captured by jumping over them diagonally. More than one enemy piece");
-        Console.WriteLine("  can be captured in the same turn by the same piece. If you can capture a piece");
-        Console.WriteLine("  you must capture a piece.");
-        Console.WriteLine();
-        Console.WriteLine("  Moves are selected with the arrow keys. Use the [enter] button to select the");
-        Console.WriteLine("  from and to squares. Invalid moves are ignored.");
-        Console.WriteLine();
-        Console.WriteLine("  Press a number key to choose number of human players:");
-        Console.WriteLine("    [0] Black (computer) vs White (computer)");
-        Console.WriteLine("    [1] Black (human) vs White (computer)");
-        Console.Write("    [2] Black (human) vs White (human)");
+        const char BlackPiece = '○';
+        const char BlackKing = '☺';
+        const char WhitePiece = '◙';
+        const char WhiteKing = '☻';
+        const char Vacant = '·';
 
-        int? humanPlayerCount = null;
-        while (humanPlayerCount is null)
+        Console.CursorVisible = false;
+        Console.SetCursorPosition(0, 0);
+        StringBuilder sb = new();
+        sb.AppendLine();
+        sb.AppendLine("  Checkers");
+        sb.AppendLine();
+        sb.AppendLine($"    ╔═══════════════════╗");
+
+        for (int y = 7; y >= 0; y--)
         {
-            Console.CursorVisible = false;
-            switch (Console.ReadKey(true).Key)
+            sb.Append($"  {y + 1} ║  ");
+            for (int x = 0; x < 8; x++)
             {
-                case ConsoleKey.D0 or ConsoleKey.NumPad0: humanPlayerCount = 0; break;
-                case ConsoleKey.D1 or ConsoleKey.NumPad1: humanPlayerCount = 1; break;
-                case ConsoleKey.D2 or ConsoleKey.NumPad2: humanPlayerCount = 2; break;
+                var piece = game.Board[x, y];
+                if (piece != null)
+                {
+                    char pieceChar = ToChar(piece);
+                    var styleIndicator = piece.Style switch
+                    {
+                        MovementStyle.Normal => " ",
+                        MovementStyle.Knight => "K",
+                        MovementStyle.Bishop => "B",
+                        MovementStyle.Queen => "Q",
+                        _ => " "
+                    };
+                    sb.Append($"{pieceChar}{styleIndicator}");
+                }
+                else
+                {
+                    sb.Append($"{Vacant} ");
+                }
             }
+            sb.AppendLine("  ║");
         }
-        return new Game(humanPlayerCount.Value);
+
+        sb.AppendLine($"    ╚═══════════════════╝");
+        sb.AppendLine($"       A B C D E F G H");
+        sb.AppendLine();
+
+        PieceColor? wc = game.Winner;
+        PieceColor? mc = playerMoved?.Color;
+        PieceColor? tc = game.Turn;
+        string w = $"  *** {wc} wins ***";
+        string m = $"  {mc} moved       ";
+        string t = $"  {tc}'s turn      ";
+        sb.AppendLine(
+            game.Winner is not null ? w :
+            playerMoved is not null ? m :
+            t);
+
+        sb.AppendLine("  Legend: K=Knight, B=Bishop, Q=Queen");
+        string p = "  Press any key to continue...";
+        string s = "                              ";
+        sb.AppendLine(promptPressKey ? p : s);
+        Console.Write(sb);
+
+        static char ToChar(Piece piece) =>
+            (piece.Color, piece.Promoted) switch
+            {
+                (PieceColor.Black, false) => BlackPiece,
+                (PieceColor.Black, true) => BlackKing,
+                (PieceColor.White, false) => WhitePiece,
+                (PieceColor.White, true) => WhiteKing,
+                _ => throw new NotImplementedException(),
+            };
     }
 
-    // Run the main game loop
     static void RunGameLoop(Game game)
     {
         while (game.Winner is null)
@@ -363,19 +484,24 @@ class Program
                         selectionStart = from;
                     }
                     (int X, int Y)? to = HumanMoveSelection(game, selectionStart: selectionStart, from: from);
-                    Piece? piece = game.Board[from.Value.X, from.Value.Y];
-
+                    Piece? piece = null;
+                    piece = game.Board[from.Value.X, from.Value.Y];
                     if (piece is null || piece.Color != game.Turn)
                     {
                         from = null;
                         to = null;
                     }
-
-                    if (from is not null && to is not null && piece is not null)
+                    if (from is not null && to is not null)
                     {
-                        Move? move = moves.FirstOrDefault(m => m.PieceToMove.Equals(piece) && m.To == to);
-                        if (move is not null &&
-                            (game.Board.Aggressor is null || move.PieceToMove == game.Board.Aggressor))
+                        // Verify that the move complies with requirements
+                        var validMoves = game.Board.GetPossibleMoves(game.Turn);
+                        var move = validMoves.FirstOrDefault(m =>
+                            m.PieceToMove.X == from.Value.X &&
+                            m.PieceToMove.Y == from.Value.Y &&
+                            m.To.X == to.Value.X &&
+                            m.To.Y == to.Value.Y);
+
+                        if (move is not null)
                         {
                             game.PerformMove(move);
                         }
@@ -384,20 +510,25 @@ class Program
             }
             else
             {
+                // AI player's turn
                 List<Move> moves = game.Board.GetPossibleMoves(game.Turn);
                 List<Move> captures = moves.Where(move => move.PieceToCapture is not null).ToList();
+
                 if (captures.Count > 0)
                 {
+                    // Prioritize captures
                     game.PerformMove(captures[Random.Shared.Next(captures.Count)]);
                 }
                 else if (!game.Board.Pieces.Any(piece => piece.Color == game.Turn && !piece.Promoted))
                 {
+                    // If all pieces are promoted, try to move towards opponent pieces
                     var (a, b) = game.Board.GetClosestRivalPieces(game.Turn);
-                    Move? priorityMove = moves.FirstOrDefault(move => move.PieceToMove == a && Board.IsTowards(move, b));
+                    Move? priorityMove = moves.FirstOrDefault(move => move.PieceToMove == a && Board.IsTowards(move.To, b));
                     game.PerformMove(priorityMove ?? moves[Random.Shared.Next(moves.Count)]);
                 }
                 else
                 {
+                    // Random move if no special conditions
                     game.PerformMove(moves[Random.Shared.Next(moves.Count)]);
                 }
             }
@@ -407,78 +538,7 @@ class Program
         }
     }
 
-    // Render the game state
-    static void RenderGameState(Game game, Player? playerMoved = null, (int X, int Y)? selection = null, (int X, int Y)? from = null, bool promptPressKey = false)
-    {
-        const char BlackPiece = '○';
-        const char BlackKing = '☺';
-        const char WhitePiece = '◙';
-        const char WhiteKing = '☻';
-        const char Vacant = '·';
-
-        Console.CursorVisible = false;
-        Console.SetCursorPosition(0, 0);
-        StringBuilder sb = new();
-        sb.AppendLine();
-        sb.AppendLine("  Checkers");
-        sb.AppendLine();
-        sb.AppendLine($"    ╔═══════════════════╗");
-        sb.AppendLine($"  8 ║  {B(0, 7)} {B(1, 7)} {B(2, 7)} {B(3, 7)} {B(4, 7)} {B(5, 7)} {B(6, 7)} {B(7, 7)}  ║ {BlackPiece} = Black");
-        sb.AppendLine($"  7 ║  {B(0, 6)} {B(1, 6)} {B(2, 6)} {B(3, 6)} {B(4, 6)} {B(5, 6)} {B(6, 6)} {B(7, 6)}  ║ {BlackKing} = Black King");
-        sb.AppendLine($"  6 ║  {B(0, 5)} {B(1, 5)} {B(2, 5)} {B(3, 5)} {B(4, 5)} {B(5, 5)} {B(6, 5)} {B(7, 5)}  ║ {WhitePiece} = White");
-        sb.AppendLine($"  5 ║  {B(0, 4)} {B(1, 4)} {B(2, 4)} {B(3, 4)} {B(4, 4)} {B(5, 4)} {B(6, 4)} {B(7, 4)}  ║ {WhiteKing} = White King");
-        sb.AppendLine($"  4 ║  {B(0, 3)} {B(1, 3)} {B(2, 3)} {B(3, 3)} {B(4, 3)} {B(5, 3)} {B(6, 3)} {B(7, 3)}  ║");
-        sb.AppendLine($"  3 ║  {B(0, 2)} {B(1, 2)} {B(2, 2)} {B(3, 2)} {B(4, 2)} {B(5, 2)} {B(6, 2)} {B(7, 2)}  ║ Taken:");
-        sb.AppendLine($"  2 ║  {B(0, 1)} {B(1, 1)} {B(2, 1)} {B(3, 1)} {B(4, 1)} {B(5, 1)} {B(6, 1)} {B(7, 1)}  ║ {game.TakenCount(PieceColor.White),2} x {WhitePiece}");
-        sb.AppendLine($"  1 ║  {B(0, 0)} {B(1, 0)} {B(2, 0)} {B(3, 0)} {B(4, 0)} {B(5, 0)} {B(6, 0)} {B(7, 0)}  ║ {game.TakenCount(PieceColor.Black),2} x {BlackPiece}");
-        sb.AppendLine($"    ╚═══════════════════╝");
-        sb.AppendLine($"       A B C D E F G H");
-        sb.AppendLine();
-        if (selection is not null)
-        {
-            sb.Replace(" $ ", $"[{ToChar(game.Board[selection.Value.X, selection.Value.Y])}]");
-        }
-        if (from is not null)
-        {
-            char fromChar = ToChar(game.Board[from.Value.X, from.Value.Y]);
-            sb.Replace(" @ ", $"<{fromChar}>");
-            sb.Replace("@ ", $"{fromChar}>");
-            sb.Replace(" @", $"<{fromChar}");
-        }
-        PieceColor? wc = game.Winner;
-        PieceColor? mc = playerMoved?.Color;
-        PieceColor? tc = game.Turn;
-        string w = $"  *** {wc} wins ***";
-        string m = $"  {mc} moved       ";
-        string t = $"  {tc}'s turn      ";
-        sb.AppendLine(
-            game.Winner is not null ? w :
-            playerMoved is not null ? m :
-            t);
-        string p = "  Press any key to continue...";
-        string s = "                              ";
-        sb.AppendLine(promptPressKey ? p : s);
-        Console.Write(sb);
-
-        char B(int x, int y) =>
-            (x, y) == selection ? '$' :
-            (x, y) == from ? '@' :
-            ToChar(game.Board[x, y]);
-
-        static char ToChar(Piece? piece) =>
-            piece is null ? Vacant :
-            (piece.Color, piece.Promoted) switch
-            {
-                (PieceColor.Black, false) => BlackPiece,
-                (PieceColor.Black, true) => BlackKing,
-                (PieceColor.White, false) => WhitePiece,
-                (PieceColor.White, true) => WhiteKing,
-                _ => throw new NotImplementedException(),
-            };
-    }
-
-    // Human player selects a move
-    static (int X, int Y)? HumanMoveSelection(Game game, (int X, int y)? selectionStart = null, (int X, int Y)? from = null)
+    static (int X, int Y)? HumanMoveSelection(Game game, (int X, int Y)? selectionStart = null, (int X, int Y)? from = null)
     {
         (int X, int Y) selection = selectionStart ?? (3, 3);
         while (true)
@@ -495,4 +555,40 @@ class Program
             }
         }
     }
+
+// ... previous code ...
+
+static Game ShowIntroScreenAndGetOption()
+{
+    Console.Clear();
+    Console.WriteLine();
+    Console.WriteLine("  Enhanced Checkers");
+    Console.WriteLine();
+    Console.WriteLine("  This is an enhanced version of Checkers with special movement styles:");
+    Console.WriteLine("  - Normal: Traditional checker movement");
+    Console.WriteLine("  - Knight: Moves like a chess knight");
+    Console.WriteLine("  - Bishop: Moves diagonally any distance");
+    Console.WriteLine("  - Queen: Moves in any direction any distance");
+    Console.WriteLine();
+    Console.WriteLine("  Each piece is randomly assigned a movement style at the start.");
+    Console.WriteLine("  The movement style is shown next to each piece (K/B/Q or space for Normal).");
+    Console.WriteLine();
+    Console.WriteLine("  Press a number key to choose number of human players:");
+    Console.WriteLine("    [0] Black (computer) vs White (computer)");
+    Console.WriteLine("    [1] Black (human) vs White (computer)");
+    Console.Write("    [2] Black (human) vs White (human)");
+
+    int? humanPlayerCount = null;
+    while (humanPlayerCount is null)
+    {
+        Console.CursorVisible = false;
+        switch (Console.ReadKey(true).Key)
+        {
+            case ConsoleKey.D0 or ConsoleKey.NumPad0: humanPlayerCount = 0; break;
+            case ConsoleKey.D1 or ConsoleKey.NumPad1: humanPlayerCount = 1; break;
+            case ConsoleKey.D2 or ConsoleKey.NumPad2: humanPlayerCount = 2; break;
+        }
+    }
+    return new Game(humanPlayerCount.Value);
+}
 }
