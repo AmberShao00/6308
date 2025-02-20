@@ -3,14 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
+// Piece color enumeration
 enum PieceColor { Black, White }
 
+// Piece class
 class Piece
 {
-    public int X { get; set; }
-    public int Y { get; set; }
-    public PieceColor Color { get; set; }
-    public bool Promoted { get; set; }
+    public int X { get; set; } // Piece's X coordinate
+    public int Y { get; set; } // Piece's Y coordinate
+    public PieceColor Color { get; set; } // Piece color
+    public bool Promoted { get; set; } // Whether the piece is promoted to a king
 
     public Piece(int x, int y, PieceColor color, bool promoted = false)
     {
@@ -21,13 +23,14 @@ class Piece
     }
 }
 
+// Move class
 class Move
 {
-    public Piece PieceToMove { get; set; }
-    public Piece? PieceToCapture { get; set; }
-    public (int X, int Y) To { get; set; }
+    public Piece PieceToMove { get; set; } // The piece to move
+    public Piece? PieceToCapture { get; set; } // The piece to capture (nullable)
+    public (int X, int Y) To { get; set; } // The target position of the move
 
-    // 添加构造函数以确保非空属性被初始化
+    // Constructor
     public Move(Piece pieceToMove, (int X, int Y) to, Piece? pieceToCapture = null)
     {
         PieceToMove = pieceToMove;
@@ -36,17 +39,20 @@ class Move
     }
 }
 
+// Board class
 class Board
 {
-    public Piece?[,] Grid { get; set; } = new Piece?[8, 8];
-    public Piece? Aggressor { get; set; }
+    public Piece?[,] Grid { get; set; } = new Piece?[8, 8]; // 8x8 grid for the board
+    public Piece? Aggressor { get; set; } // Current aggressor (nullable)
 
+    // Indexer to access pieces on the board
     public Piece? this[int x, int y]
     {
         get => Grid[x, y];
         set => Grid[x, y] = value;
     }
 
+    // Get all possible moves for the current color
     public List<Move> GetPossibleMoves(PieceColor color)
     {
         var moves = new List<Move>();
@@ -64,11 +70,12 @@ class Board
         return moves;
     }
 
+    // Get all possible moves for a specific piece
     private List<Move> GetMovesForPiece(Piece piece)
     {
         var moves = new List<Move>();
-        int[] dx = { -1, 1, -1, 1 };
-        int[] dy = { -1, -1, 1, 1 };
+        int[] dx = { -1, 1, -1, 1 }; // Horizontal movement directions
+        int[] dy = { -1, -1, 1, 1 }; // Vertical movement directions
 
         for (int i = 0; i < 4; i++)
         {
@@ -96,6 +103,7 @@ class Board
         return moves;
     }
 
+    // Validate if a move is valid
     public Move? ValidateMove(PieceColor color, (int X, int Y) from, (int X, int Y) to)
     {
         var piece = Grid[from.X, from.Y];
@@ -108,6 +116,7 @@ class Board
         return moves.FirstOrDefault(m => m.To == to);
     }
 
+    // Perform a move
     public void PerformMove(Move move)
     {
         Grid[move.PieceToMove.X, move.PieceToMove.Y] = null;
@@ -121,8 +130,10 @@ class Board
         }
     }
 
+    // Get all pieces on the board
     public IEnumerable<Piece> Pieces => Grid.Cast<Piece?>().Where(p => p != null).Select(p => p!);
 
+    // Get the closest pair of pieces between the current color and the opponent's color
     public (Piece, Piece) GetClosestRivalPieces(PieceColor color)
     {
         var pieces = Pieces.Where(p => p.Color == color).ToList();
@@ -147,6 +158,7 @@ class Board
         return (a, b);
     }
 
+    // Check if a move is towards a target piece
     public static bool IsTowards(Move move, Piece target)
     {
         int dx = move.To.X - move.PieceToMove.X;
@@ -157,10 +169,11 @@ class Board
     }
 }
 
+// Player class
 class Player
 {
-    public PieceColor Color { get; set; }
-    public bool IsHuman { get; set; }
+    public PieceColor Color { get; set; } // Player color
+    public bool IsHuman { get; set; } // Whether the player is human
 
     public Player(PieceColor color, bool isHuman)
     {
@@ -169,19 +182,21 @@ class Player
     }
 }
 
+// Game class
 class Game
 {
-    public Board Board { get; set; } = new Board();
-    public List<Player> Players { get; set; } = new List<Player>();
-    public PieceColor Turn { get; set; } = PieceColor.Black;
-    public PieceColor? Winner { get; set; }
+    public Board Board { get; set; } = new Board(); // Board
+    public List<Player> Players { get; set; } = new List<Player>(); // List of players
+    public PieceColor Turn { get; set; } = PieceColor.Black; // Current turn color
+    public PieceColor? Winner { get; set; } // Winner (nullable)
+
 
     public Game(int humanPlayerCount)
     {
         Players.Add(new Player(PieceColor.Black, humanPlayerCount > 0));
         Players.Add(new Player(PieceColor.White, humanPlayerCount > 1));
 
-        // Initialize the board with pieces
+        // Initialize pieces on the board
         for (int x = 0; x < 8; x++)
         {
             for (int y = 0; y < 3; y++)
@@ -204,6 +219,7 @@ class Game
         }
     }
 
+    // Perform a move
     public void PerformMove(Move move)
     {
         Board.PerformMove(move);
@@ -221,6 +237,7 @@ class Game
         CheckForWinner();
     }
 
+    // Check if there is a winner
     private void CheckForWinner()
     {
         var blackPieces = Board.Pieces.Where(p => p.Color == PieceColor.Black).ToList();
@@ -240,12 +257,14 @@ class Game
         }
     }
 
+    // Get the number of captured pieces for a specific color
     public int TakenCount(PieceColor color)
     {
         return 12 - Board.Pieces.Count(p => p.Color == color);
     }
 }
 
+// Main program
 class Program
 {
     static void Main(string[] args)
@@ -276,6 +295,7 @@ class Program
         }
     }
 
+    // Show the intro screen and get the option
     static Game ShowIntroScreenAndGetOption()
     {
         Console.Clear();
@@ -318,6 +338,7 @@ class Program
         return new Game(humanPlayerCount.Value);
     }
 
+    // Run the main game loop
     static void RunGameLoop(Game game)
     {
         while (game.Winner is null)
@@ -386,6 +407,7 @@ class Program
         }
     }
 
+    // Render the game state
     static void RenderGameState(Game game, Player? playerMoved = null, (int X, int Y)? selection = null, (int X, int Y)? from = null, bool promptPressKey = false)
     {
         const char BlackPiece = '○';
@@ -426,8 +448,6 @@ class Program
         PieceColor? wc = game.Winner;
         PieceColor? mc = playerMoved?.Color;
         PieceColor? tc = game.Turn;
-        // Note: these strings need to match in length
-        // so they overwrite each other.
         string w = $"  *** {wc} wins ***";
         string m = $"  {mc} moved       ";
         string t = $"  {tc}'s turn      ";
@@ -457,6 +477,7 @@ class Program
             };
     }
 
+    // Human player selects a move
     static (int X, int Y)? HumanMoveSelection(Game game, (int X, int y)? selectionStart = null, (int X, int Y)? from = null)
     {
         (int X, int Y) selection = selectionStart ?? (3, 3);
