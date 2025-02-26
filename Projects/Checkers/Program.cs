@@ -1,5 +1,5 @@
 /*
-Feature 1: Trap System
+Feature 1: Trap System (New Feature)
 - 3 random traps are generated on the board each turn, displayed as `×`.
 - Pieces that move onto a trap have a 30% chance of being destroyed.
 - Trap positions are updated each turn, and players must avoid them.
@@ -9,16 +9,35 @@ Feature 2: Move in eight directions
 - Capture logic also supports 8 directions, allowing pieces to jump over enemy pieces.
 - The King (upgraded) can move forward and backward.
 
-Feature 3: Undo function
+Feature 3: Undo function (New Feature)
 - Players can press the `U` key to undo the last move.
 - Up to 3 undos are allowed per game.
 - After undoing, the game state is restored to the previous step.
 
-Feature 4: Special moves (teleport pieces)
+Feature 4: Special moves 
 - 10% of pieces gain the ability to teleport to any enemy piece position.
 - Teleport pieces can bypass obstacles and move directly to the target.
 - The Teleporter Piece looks the same as a normal piece, but has special abilities.
  */
+
+/*
+Feature 1: Trap system
+First, I created a variable traps to store the positions of traps and initialized it as an empty list. Each turn, 3 random trap positions are generated, displayed as ×.
+Every time a piece moves onto a trap position, the program checks if the trap is triggered. If triggered, the piece has a 30% chance of being destroyed.
+When determining if a piece triggers a trap, I used if (game.Board.Traps.Contains((x, y)) && Random.Shared.Next(100) < 30) to check the trap and decide whether to destroy the piece.
+
+Feature 2: Move in eight directions
+First, I defined an array directions to store 8 movement directions (up, down, left, right, and diagonals).
+When determining if the target position is valid, I used if (game.Board.IsWithinBounds(x, y) && game.Board[x, y] is null) to check and allow the move.Every time a piece moves, the program iterates through all directions and checks if the target position is within bounds and empty. If valid, the piece can move to that position.
+
+Feature 3: Undo function
+First, I created a list gameHistory to store the game's historical states and initialized it as an empty list. Every time the player makes a move, the current game state is saved to the history.
+Every time the player presses the U key, the program checks if an undo is possible. If yes, the game state reverts to the previous step, and the undo count is decreased.
+
+Feature 4: Special moves
+First, I added a property CanTeleport to the piece to indicate if it has the teleport ability. 10% of pieces randomly gain this ability.
+When determining if a piece can teleport, I used if (piece.CanTeleport) and moves.Add(new Move(piece, target.X, target.Y, target)); to add the teleport move.Every time a piece with teleport ability moves, the program checks all enemy piece positions and allows the piece to teleport to any enemy piece's position.
+*/
 
 using System;
 using System.Collections.Generic;
